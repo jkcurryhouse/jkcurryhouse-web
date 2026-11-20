@@ -1,0 +1,135 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;0,700;1,300;1,400&family=Inter:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display:    'Cormorant Garamond', Georgia, serif;
+  --font-cinzel:     'Cinzel', Georgia, serif;
+  --font-cormorant:  'Cormorant Garamond', Georgia, serif;
+  --font-inter:      'Inter', system-ui, sans-serif;
+  --nav-height:      64px;
+}
+
+@layer base {
+  * { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    /* Offset anchor links for fixed navbar */
+    scroll-padding-top: var(--nav-height);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-cream text-charcoal-800 font-body antialiased;
+    font-family: var(--font-inter);
+    /* Prevent horizontal overflow on mobile */
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4 { font-family: var(--font-display); font-weight: 600; }
+
+  /* Focus styles for keyboard accessibility */
+  :focus-visible {
+    outline: 2px solid #d4a437;
+    outline-offset: 2px;
+  }
+
+  /* Better tap targets on mobile */
+  button, a {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Prevent font-size inflation on mobile Safari */
+  * { -webkit-text-size-adjust: none; text-size-adjust: none; }
+
+  img, video { max-width: 100%; height: auto; }
+}
+
+@layer components {
+  .font-display { font-family: var(--font-display); }
+  .font-caps    { font-family: var(--font-cinzel); }
+
+  /* Gold foil text, like the shop sign */
+  .text-gold-gradient {
+    background: linear-gradient(180deg, #f2d27a 0%, #d4a437 55%, #9c6f1e 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .font-accent  { font-family: var(--font-cormorant); }
+
+  .section-pad  { @apply py-16 md:py-24; }
+  .container-pad { @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8; }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-none
+           bg-gold-gradient text-charcoal-900 px-8 py-3
+           font-body font-semibold tracking-wide uppercase text-sm
+           shadow-[inset_0_1px_0_rgba(255,255,255,0.35)]
+           hover:brightness-110 transition-[filter] duration-200
+           focus-visible:outline focus-visible:outline-2 focus-visible:outline-saffron-400;
+  }
+
+  .btn-outline {
+    @apply inline-flex items-center justify-center gap-2 rounded-none
+           border border-saffron-400 text-saffron-400 px-8 py-3
+           font-body font-medium tracking-wide uppercase text-sm
+           hover:bg-saffron-400 hover:text-charcoal-900
+           transition-colors duration-200
+           focus-visible:outline focus-visible:outline-2 focus-visible:outline-saffron-400;
+  }
+
+  .gold-divider { @apply w-16 h-px bg-gold mx-auto my-4; }
+
+  /* Ornamental rule with a centre flourish, from the shop sign */
+  .gold-rule {
+    @apply flex items-center justify-center gap-3 text-gold;
+  }
+  .gold-rule::before, .gold-rule::after {
+    content: "";
+    @apply h-px w-16 md:w-24 bg-gradient-to-r from-transparent via-gold to-gold;
+  }
+  .gold-rule::after { @apply bg-gradient-to-l; }
+  .eyebrow      { @apply font-caps text-gold-deep text-sm tracking-[0.3em] uppercase; }
+  /* Brighter gold when the eyebrow sits on a dark section */
+  .bg-section-gradient .eyebrow,
+  .bg-charcoal-900 .eyebrow,
+  .bg-charcoal-800 .eyebrow,
+  .eyebrow-dark { @apply text-gold; }
+
+  /* Skip-to-content link for accessibility */
+  .skip-link {
+    @apply absolute -top-10 left-4 z-[999] bg-spice-500 text-white px-4 py-2 text-sm
+           font-body focus:top-4 transition-all;
+  }
+}
+
+/* Custom scrollbar */
+@media (min-width: 768px) {
+  ::-webkit-scrollbar       { width: 6px; }
+  ::-webkit-scrollbar-track { background: #0b0b0b; }
+  ::-webkit-scrollbar-thumb { background: #d4a437; border-radius: 3px; }
+}
+
+/* Hide scrollbar on mobile filter rows */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Print styles */
+@media print {
+  .no-print, nav, footer, [role="dialog"] { display: none !important; }
+  body { background: white; color: black; }
+  a { text-decoration: none; color: inherit; }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
