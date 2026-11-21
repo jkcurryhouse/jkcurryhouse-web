@@ -9,7 +9,10 @@ import MenuSection from "./MenuSection";
 import CartSidebar from "./CartSidebar";
 import CheckoutForm from "./CheckoutForm";
 import OrderConfirmation from "./OrderConfirmation";
-import { ShoppingBag } from "lucide-react";
+import { ShoppingBag, AlertCircle } from "lucide-react";
+import { authFetch } from "@/lib/api-client";
+import type { MenuItem } from "@/lib/menu-data";
+import type { ReactNode } from "react";
 
 const stripePromise = loadStripe(
   process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? "pk_test_placeholder"
@@ -31,8 +34,8 @@ interface ConfirmedOrder {
   guestEmail: string;
 }
 
-export default function OrderClient() {
-  const { items, mode, total, subtotal, deliveryFee, discount, discountCode, deliveryAddress, itemCount } = useCart();
+export default function OrderClient({ items: menu, notice }: { items: MenuItem[]; notice?: ReactNode }) {
+  const { items, mode, total, discountCode, deliveryAddress, itemCount, shop, setMode } = useCart();
   const { toast } = useToast();
   const [step, setStep] = useState<Step>("browse");
   const [pending, setPending] = useState<PendingOrder | null>(null);
@@ -50,6 +53,10 @@ export default function OrderClient() {
       toast("Add some items before checking out.", "error");
       return;
     }
+    if (!shop.acceptingOrders) {
+      toast("We're not taking online orders right now. Please call 01249 123456.", "error");
+      return;
+    }
     if (mode === "delivery" && !deliveryAddress.trim()) {
       toast("Enter your delivery address before proceeding.", "error");
       return;
@@ -57,22 +64,14 @@ export default function OrderClient() {
 
     setCreatingIntent(true);
     try {
-      const res = await fetch("/api/orders", {
+      // The server re-prices everything; expectedTotal lets it warn if prices changed.
+      const res = await authFetch("/api/orders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           mode,
-          items: items.map(({ item, quantity }) => ({
-            menuItemId: item.id,
-            name: item.name,
-            price: item.price,
-            quantity,
-          })),
-          subtotal,
-          deliveryFee,
-          discount,
+          items: items.map(({ item, quantity }) => ({ menuItemId: item.id, quantity })),
           discountCode: discountCode || undefined,
-          total,
+          expectedTotal: total,
           deliveryAddress: mode === "delivery" ? deliveryAddress : undefined,
         }),
       });
@@ -113,6 +112,7 @@ export default function OrderClient() {
 
   return (
     <div className="pt-16 min-h-screen bg-cream">
+      {notice}
       {/* Header */}
       <div className="bg-section-gradient py-16 text-center relative overflow-hidden">
         <div className="absolute inset-6 border border-gold/10 pointer-events-none hidden md:block" />
@@ -131,6 +131,18 @@ export default function OrderClient() {
           <OrderConfirmation order={confirmed} />
         ) : (
           <>
+            {!shop.acceptingOrders && (
+              <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 text-sm font-body flex items-center gap-2">
+                <AlertCircle size={16} /> We&apos;re not taking online orders right now — please call us on 01249 123456.
+              </div>
+            )}
+            {shop.acceptingOrders && !shop.deliveryEnabled && (
+              <div className="mb-6 bg-amber-50 border border-amber-200 text-amber-900 px-4 py-3 text-sm font-body flex items-center gap-2">
+                <AlertCircle size={16} /> Delivery is unavailable right now — takeaway orders are still open.
+                {mode === "delivery" && <button className="underline ml-1" onClick={() => setMode("takeaway")}>Switch to takeaway</button>}
+              </div>
+            )}
+
             {/* Order mode */}
             {step === "browse" && (
               <div className="max-w-sm mb-8">
@@ -143,7 +155,7 @@ export default function OrderClient() {
               {/* Left: Menu or Checkout */}
               <div className="lg:col-span-2">
                 {step === "browse" ? (
-                  <MenuSection />
+                  <MenuSection items={menu} />
                 ) : (
                   pending && (
                     <Elements

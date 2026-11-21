@@ -54,7 +54,7 @@
 ## S3 Bucket (Menu Images)
 
 ### Create bucket
-1. S3 → Create bucket → `jk-curryhouse-menu-images` → eu-west-2
+1. S3 → Create bucket → `jk-curryhouse-menu-images` → ap-southeast-2 (same region as Amplify)
 2. **Block public access:** Uncheck "Block all public access" (images must be public)
 3. Acknowledge warning → Create
 

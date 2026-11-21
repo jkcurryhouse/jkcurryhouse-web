@@ -10,6 +10,7 @@ import {
   CheckCircle, ShoppingBag, Star, Gift
 } from "lucide-react";
 import Link from "next/link";
+import { authFetch } from "@/lib/api-client";
 import Button from "@/components/ui/Button";
 
 export default function OffersClient() {
@@ -27,14 +28,14 @@ export default function OffersClient() {
     setLoading(true);
     try {
       // General offers (public)
-      const gRes  = await fetch(user ? `/api/offers?userId=${user.userId}` : "/api/offers");
+      const gRes  = await authFetch("/api/offers");
       const gData = await gRes.json();
       setGeneral(gData.general ?? []);
       setPersonal(gData.personal ?? []);
 
       // Trigger personalisation engine for logged-in users
       if (user) {
-        const pRes  = await fetch(`/api/offers/user?userId=${user.userId}`);
+        const pRes  = await authFetch("/api/offers/user");
         const pData = await pRes.json();
         setStats(pData.stats);
         if ((pData.offers ?? []).length > 0) setPersonal(pData.offers);

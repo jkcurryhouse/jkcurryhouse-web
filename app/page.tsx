@@ -6,6 +6,8 @@ import OpeningHours from "@/components/home/OpeningHours";
 import CTABar from "@/components/home/CTABar";
 import Location from "@/components/home/Location";
 
+export const revalidate = 60;
+
 export const metadata: Metadata = {
   title: "JK Curryhouse — The Real Indian Kitchen | Chippenham SN15",
   description:

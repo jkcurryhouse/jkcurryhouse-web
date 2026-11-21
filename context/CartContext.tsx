@@ -1,6 +1,6 @@
 "use client";
 import {
-  createContext, useContext, useReducer, useCallback,
+  createContext, useContext, useReducer, useCallback, useEffect, useState,
   type ReactNode,
 } from "react";
 import { type MenuItem } from "@/lib/menu-data";
@@ -45,6 +45,7 @@ interface CartContextValue extends CartState {
   clear:         () => void;
   subtotal:      number;
   deliveryFee:   number;
+  shop:          ShopSettings;
   discount:      number;
   total:         number;
   itemCount:     number;
@@ -108,10 +109,27 @@ function cartReducer(state: CartState, action: CartAction): CartState {
 // ── Context ──────────────────────────────────────────────────────────────────
 const CartContext = createContext<CartContextValue | null>(null);
 
-const DELIVERY_FEE = 2.99;
-const FREE_DELIVERY_THRESHOLD = 25;
+/** Public settings controlled from Admin → Settings. Defaults apply until loaded. */
+export interface ShopSettings {
+  acceptingOrders: boolean;
+  deliveryEnabled: boolean;
+  deliveryFee: number;
+  freeDeliveryThreshold: number;
+  minDeliveryOrder: number;
+  deliveryPostcodes: string[];
+}
+const DEFAULT_SHOP: ShopSettings = {
+  acceptingOrders: true, deliveryEnabled: true, deliveryFee: 2.99,
+  freeDeliveryThreshold: 25, minDeliveryOrder: 0, deliveryPostcodes: ["SN15", "SN14"],
+};
 
 export function CartProvider({ children }: { children: ReactNode }) {
+  const [shop, setShop] = useState<ShopSettings>(DEFAULT_SHOP);
+  useEffect(() => {
+    fetch("/api/settings").then((r) => r.json()).then((d) => d.settings && setShop(d.settings)).catch(() => {});
+  }, []);
+  const DELIVERY_FEE = shop.deliveryFee;
+  const FREE_DELIVERY_THRESHOLD = shop.freeDeliveryThreshold;
   const [state, dispatch] = useReducer(cartReducer, {
     items: [],
     mode: "delivery",
@@ -132,7 +150,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const discount = state.discountPercent > 0
     ? parseFloat(((subtotal * state.discountPercent) / 100).toFixed(2))
     : state.discountAmount;
-  const total = Math.max(0, subtotal + deliveryFee - discount);
+  const total = Math.round(Math.max(0, subtotal + deliveryFee - discount) * 100) / 100;
   const itemCount = state.items.reduce((n, ci) => n + ci.quantity, 0);
 
   const add           = useCallback((item: MenuItem) => dispatch({ type: "ADD", item }), []);
@@ -151,7 +169,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       ...state,
       add, remove, increment, decrement,
       setMode, setAddress, setDiscount, clearDiscount, clear,
-      subtotal, deliveryFee, discount, total, itemCount,
+      subtotal, deliveryFee, discount, total, itemCount, shop,
     }}>
       {children}
     </CartContext.Provider>

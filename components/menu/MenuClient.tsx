@@ -1,10 +1,10 @@
 "use client";
-import { useState } from "react";
-import { menuItems, categoryOrder, categoryLabels, ALLERGEN_LABELS, type MenuItem, type AllergenKey } from "@/lib/menu-data";
+import { useState, type ReactNode } from "react";
+import { categoryOrder, categoryLabels, ALLERGEN_LABELS, type MenuItem, type AllergenKey } from "@/lib/menu-data";
 import { formatPrice } from "@/lib/utils";
 import { Flame, Leaf, Star, AlertCircle } from "lucide-react";
 
-export default function MenuClient() {
+export default function MenuClient({ items: menuItems, notice }: { items: MenuItem[]; notice?: ReactNode }) {
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [showAllergenKey, setShowAllergenKey] = useState(false);
 
@@ -22,6 +22,7 @@ export default function MenuClient() {
 
   return (
     <div className="pt-16">
+      {notice}
       {/* Header */}
       <div className="bg-section-gradient py-20 text-center">
         <p className="eyebrow mb-3">Chippenham&apos;s Favourite</p>

@@ -24,6 +24,7 @@ export interface MenuItem {
   isVegetarian?: boolean;
   isSpicy?: boolean;
   chefPick?: boolean;
+  imageUrl?: string;
 }
 
 export const menuItems: MenuItem[] = [

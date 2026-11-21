@@ -1,44 +1,35 @@
 import { NextResponse, type NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
+import { getIdentity } from "@/lib/server-auth";
+import { isOfferLive, liveOfferWhere } from "@/lib/offer-rules";
 
+export const dynamic = "force-dynamic";
+
+// GET /api/offers — live general offers for everyone, plus the caller's own
+// personalised offers when a valid sign-in token is sent.
 export async function GET(req: NextRequest) {
-  const userId = req.nextUrl.searchParams.get("userId");
-  const now    = new Date();
-
   try {
-    // General offers visible to everyone
     const general = await prisma.offer.findMany({
-      where: { isGeneral: true, expiresAt: { gt: now } },
+      where:   { isGeneral: true, ...liveOfferWhere() },
       orderBy: { expiresAt: "asc" },
     });
 
-    // Personalised offers for this user (if logged in)
     let personal: typeof general = [];
-    if (userId) {
+    const me = await getIdentity(req);
+    if (me) {
       const userOffers = await prisma.userOffer.findMany({
-        where:   { userId, redeemedAt: null },
+        where:   { userId: me.sub, redeemedAt: null },
         include: { offer: true },
       });
-      personal = userOffers
-        .filter((uo: { offer: { expiresAt: Date } }) => new Date(uo.offer.expiresAt) > now)
-        .map((uo: { offer: typeof general[number] }) => uo.offer);
+      personal = userOffers.map((uo) => uo.offer).filter((o) => !o.isGeneral && isOfferLive(o));
     }
 
-    return NextResponse.json({ general, personal });
+    return NextResponse.json({
+      general: general.filter((o) => isOfferLive(o)),
+      personal,
+    });
   } catch (err) {
     console.error("[GET /api/offers]", err);
     return NextResponse.json({ error: "Failed to load offers." }, { status: 500 });
-  }
-}
-
-// POST /api/offers — admin: create an offer
-export async function POST(req: NextRequest) {
-  try {
-    const body = await req.json();
-    const offer = await prisma.offer.create({ data: body });
-    return NextResponse.json({ ok: true, offer });
-  } catch (err) {
-    console.error("[POST /api/offers]", err);
-    return NextResponse.json({ error: "Failed to create offer." }, { status: 500 });
   }
 }

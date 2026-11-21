@@ -138,7 +138,7 @@ export default function PrivacyPage() {
             <ul className="list-disc pl-5 space-y-1">
               <li><strong>Stripe</strong> — payment processing (PCI DSS Level 1 certified)</li>
               <li><strong>AWS Cognito</strong> — user authentication and account management</li>
-              <li><strong>AWS RDS</strong> — encrypted database hosting (eu-west-2)</li>
+              <li><strong>AWS RDS</strong> — encrypted database hosting (Sydney, Australia)</li>
               <li><strong>AWS SES</strong> — transactional email delivery</li>
               <li><strong>AWS S3 / CloudFront</strong> — static asset and image hosting</li>
             </ul>
@@ -148,7 +148,9 @@ export default function PrivacyPage() {
           <Section num="9" title="Data Security">
             <p>
               All data is encrypted in transit (TLS 1.2+) and at rest. Our AWS infrastructure is
-              hosted in the eu-west-2 (London) region. Passwords are never stored — authentication
+              hosted in the ap-southeast-2 (Sydney, Australia) region. Because this is outside the
+              UK, transfers are protected by the UK International Data Transfer Addendum to the EU
+              Standard Contractual Clauses, which AWS includes in its Data Processing Addendum. Passwords are never stored — authentication
               is handled entirely by AWS Cognito. Payment card data is processed directly by Stripe
               and never passes through our servers.
             </p>

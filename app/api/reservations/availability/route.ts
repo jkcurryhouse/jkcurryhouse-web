@@ -1,43 +1,40 @@
 import { NextResponse, type NextRequest } from "next/server";
-import prisma from "@/lib/prisma";
 import { getSlotsForDate } from "@/lib/reservations";
+import { getSlotUsage } from "@/lib/booking";
+import { getSettings } from "@/lib/settings";
 
-// GET /api/reservations/availability?date=2025-03-14
-// Returns which time slots still have space on a given date.
+export const dynamic = "force-dynamic";
+
+// GET /api/reservations/availability?date=2025-03-14&party=4
 export async function GET(req: NextRequest) {
-  const date = req.nextUrl.searchParams.get("date");
-
+  const date  = req.nextUrl.searchParams.get("date");
+  const party = Math.max(1, Number(req.nextUrl.searchParams.get("party") ?? 1) || 1);
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     return NextResponse.json({ error: "Invalid date" }, { status: 400 });
   }
 
   try {
-    const allSlots = getSlotsForDate(date);
-    const MAX_PER_SLOT = 3;
+    const s = await getSettings();
+    if (!s.acceptingReservations || s.closedDates.includes(date)) {
+      return NextResponse.json({
+        date, slots: [], closed: true,
+        reason: !s.acceptingReservations
+          ? "Online booking is paused. Please call us on 01249 123456."
+          : "We're closed on this date.",
+      });
+    }
 
-    // Count existing confirmed bookings per slot on this date
-    const dateStart = new Date(`${date}T00:00:00`);
-    const dateEnd   = new Date(`${date}T23:59:59`);
-
-    const bookings = await prisma.reservation.groupBy({
-      by: ["time"],
-      where: {
-        date: { gte: dateStart, lte: dateEnd },
-        status: { not: "CANCELLED" },
-      },
-      _count: { time: true },
+    const usage = await getSlotUsage(date);
+    const slots = getSlotsForDate(date).map((time) => {
+      const u = usage[time] ?? { bookings: 0, covers: 0 };
+      const remaining = Math.max(0, s.maxBookingsPerSlot - u.bookings);
+      return {
+        time,
+        remaining,
+        available: remaining > 0 && u.covers + party <= s.maxCoversPerSlot,
+      };
     });
-
-    const bookedMap: Record<string, number> = {};
-    for (const b of bookings) bookedMap[b.time] = b._count.time;
-
-    const slots = allSlots.map((time) => ({
-      time,
-      available: (bookedMap[time] ?? 0) < MAX_PER_SLOT,
-      remaining: MAX_PER_SLOT - (bookedMap[time] ?? 0),
-    }));
-
-    return NextResponse.json({ date, slots });
+    return NextResponse.json({ date, slots, closed: false, maxPartySize: s.maxPartySize });
   } catch (err) {
     console.error("[GET /api/reservations/availability]", err);
     return NextResponse.json({ error: "Failed to check availability." }, { status: 500 });

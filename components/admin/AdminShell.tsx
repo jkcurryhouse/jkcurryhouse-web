@@ -4,7 +4,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import {
   LayoutDashboard, UtensilsCrossed, ShoppingBag,
-  CalendarDays, Tag, LogOut, Menu, X, ChevronRight,
+  CalendarDays, Tag, LogOut, Menu, X, ChevronRight, Users, Settings,
 } from "lucide-react";
 import { useState } from "react";
 import { AdminProvider, useAdmin } from "@/context/AdminContext";
@@ -18,6 +18,8 @@ const NAV = [
   { href: "/admin/orders",       label: "Orders",       icon: ShoppingBag },
   { href: "/admin/reservations", label: "Reservations", icon: CalendarDays },
   { href: "/admin/offers",       label: "Offers",       icon: Tag },
+  { href: "/admin/customers",    label: "Customers",    icon: Users },
+  { href: "/admin/settings",     label: "Settings",     icon: Settings },
 ];
 
 function AdminGuard({ children }: { children: ReactNode }) {

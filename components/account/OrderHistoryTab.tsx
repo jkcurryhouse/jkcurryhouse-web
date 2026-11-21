@@ -5,8 +5,9 @@ import { ShoppingBag, Truck, Clock, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link";
 import Button from "@/components/ui/Button";
 import { formatPrice } from "@/lib/utils";
+import { authFetch } from "@/lib/api-client";
 
-interface OrderItem { menuItemId: string; quantity: number; price: number; }
+interface OrderItem { menuItemId: string; name?: string; quantity: number; price: number; }
 interface Order {
   id: string; type: "DELIVERY"|"TAKEAWAY";
   status: string; total: number; guestEmail: string|null;
@@ -30,7 +31,7 @@ export default function OrderHistoryTab({ userId }: { userId: string }) {
   useEffect(() => {
     (async () => {
       try {
-        const res = await fetch(`/api/orders?userId=${userId}`);
+        const res = await authFetch("/api/orders");
         const data = await res.json();
         setOrders(data.orders ?? []);
       } catch {
@@ -103,7 +104,7 @@ export default function OrderHistoryTab({ userId }: { userId: string }) {
                     <ul className="space-y-1 pt-3">
                       {order.items.map((item, i) => (
                         <li key={i} className="flex justify-between text-sm font-body">
-                          <span className="text-gray-600">{item.menuItemId} × {item.quantity}</span>
+                          <span className="text-gray-600">{item.name || item.menuItemId} × {item.quantity}</span>
                           <span className="text-charcoal-800">{formatPrice(item.price * item.quantity)}</span>
                         </li>
                       ))}

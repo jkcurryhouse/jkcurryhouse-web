@@ -5,6 +5,7 @@ import { formatPrice } from "@/lib/utils";
 import { Minus, Plus, Trash2, Tag, X, ChevronRight, ShoppingBag } from "lucide-react";
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
+import { authFetch } from "@/lib/api-client";
 
 interface CartSidebarProps {
   onCheckout: () => void;
@@ -26,7 +27,7 @@ export default function CartSidebar({ onCheckout }: CartSidebarProps) {
     if (!codeInput.trim()) return;
     setCheckingCode(true);
     try {
-      const res = await fetch(`/api/offers/validate?code=${encodeURIComponent(codeInput.trim())}`);
+      const res = await authFetch(`/api/offers/validate?code=${encodeURIComponent(codeInput.trim())}&subtotal=${subtotal}`);
       const data = await res.json();
       if (!res.ok || !data.valid) {
         toast(data.error ?? "Invalid or expired discount code.", "error");

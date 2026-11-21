@@ -6,7 +6,7 @@ export default function AdminReservationsPage() {
     <div>
       <div className="mb-6">
         <h1 className="font-display text-3xl text-charcoal-900">Reservations</h1>
-        <p className="text-gray-500 text-sm font-body mt-1">View and manage all table bookings.</p>
+        <p className="text-gray-500 text-sm font-body mt-1">Take phone and walk-in bookings, assign tables, and manage tonight’s service.</p>
       </div>
       <ReservationsAdmin />
     </div>

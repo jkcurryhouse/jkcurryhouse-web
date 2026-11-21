@@ -8,27 +8,29 @@ import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { formatPrice } from "@/lib/utils";
-import { ALLERGEN_LABELS, categoryLabels, type AllergenKey } from "@/lib/menu-data";
+import { ALLERGEN_LABELS, type AllergenKey } from "@/lib/menu-data";
+import { authFetch } from "@/lib/api-client";
 
 type Category = "STARTER"|"MAIN"|"SIDE"|"RICE"|"BREAD"|"SPECIAL";
 
 interface DBMenuItem {
   id: string; name: string; description: string; price: number;
   category: Category; isSpecial: boolean; isAvailable: boolean;
+  isVegan: boolean; isVegetarian: boolean; isSpicy: boolean; chefPick: boolean;
   allergens: string[]; imageUrl: string | null;
 }
 
 interface FormState {
   name: string; description: string; price: string;
   category: Category; isSpecial: boolean; isAvailable: boolean;
-  allergens: string[]; isVegan: boolean; isVegetarian: boolean; isSpicy: boolean;
+  allergens: string[]; isVegan: boolean; isVegetarian: boolean; isSpicy: boolean; chefPick: boolean;
   imageUrl: string;
 }
 
 const EMPTY_FORM: FormState = {
   name: "", description: "", price: "",
   category: "MAIN", isSpecial: false, isAvailable: true,
-  allergens: [], isVegan: false, isVegetarian: false, isSpicy: false,
+  allergens: [], isVegan: false, isVegetarian: false, isSpicy: false, chefPick: false,
   imageUrl: "",
 };
 
@@ -55,8 +57,9 @@ export default function MenuAdmin() {
   const fetchItems = useCallback(async () => {
     setLoading(true);
     try {
-      const res  = await fetch("/api/menu");
+      const res  = await authFetch("/api/admin/menu");
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       setItems(data.items ?? []);
     } catch { toast("Failed to load menu.", "error"); }
     finally  { setLoading(false); }
@@ -78,7 +81,8 @@ export default function MenuAdmin() {
     setForm({
       name: item.name, description: item.description, price: String(item.price),
       category: item.category, isSpecial: item.isSpecial, isAvailable: item.isAvailable,
-      allergens: item.allergens, isVegan: false, isVegetarian: false, isSpicy: false,
+      allergens: item.allergens, isVegan: item.isVegan, isVegetarian: item.isVegetarian,
+      isSpicy: item.isSpicy, chefPick: item.chefPick,
       imageUrl: item.imageUrl ?? "",
     });
     setShowForm(true);
@@ -88,24 +92,25 @@ export default function MenuAdmin() {
     setUploading(true);
     try {
       // Get pre-signed URL from our API
-      const res  = await fetch("/api/menu/upload", {
+      const res  = await authFetch("/api/admin/upload", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filename: file.name, contentType: file.type }),
+        body: JSON.stringify({ contentType: file.type, size: file.size }),
       });
-      const { uploadUrl, publicUrl } = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
       // Upload directly to S3
-      await fetch(uploadUrl, {
+      const put = await fetch(data.uploadUrl, {
         method: "PUT",
         body: file,
         headers: { "Content-Type": file.type },
       });
+      if (!put.ok) throw new Error("S3 rejected the upload — check the bucket CORS settings.");
 
-      sf("imageUrl", publicUrl);
+      sf("imageUrl", data.publicUrl);
       toast("Image uploaded.", "success");
-    } catch {
-      toast("Image upload failed. Check S3 configuration.", "error");
+    } catch (e) {
+      toast((e as Error).message || "Image upload failed. Check S3 configuration.", "error");
     } finally {
       setUploading(false);
     }
@@ -125,59 +130,57 @@ export default function MenuAdmin() {
         category:    form.category,
         isSpecial:   form.isSpecial,
         isAvailable: form.isAvailable,
+        isVegan:      form.isVegan,
+        isVegetarian: form.isVegetarian || form.isVegan,
+        isSpicy:      form.isSpicy,
+        chefPick:     form.chefPick,
         allergens:   form.allergens,
         imageUrl:    form.imageUrl || null,
       };
 
       const res = editing
-        ? await fetch(`/api/menu/${editing}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
-        : await fetch("/api/menu", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+        ? await authFetch(`/api/admin/menu/${editing}`, { method: "PATCH", body: JSON.stringify(payload) })
+        : await authFetch("/api/admin/menu", { method: "POST", body: JSON.stringify(payload) });
 
-      if (!res.ok) throw new Error();
-      toast(editing ? "Menu item updated." : "Menu item created.", "success");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast(editing ? "Menu item updated — live on the website." : "Dish added — live on the website.", "success");
       setShowForm(false);
       fetchItems();
-    } catch { toast("Could not save menu item.", "error"); }
+    } catch (e) { toast((e as Error).message || "Could not save menu item.", "error"); }
     finally  { setSaving(false); }
   };
 
   const handleToggleAvailable = async (item: DBMenuItem) => {
     try {
-      await fetch(`/api/menu/${item.id}`, {
+      const res = await authFetch(`/api/admin/menu/${item.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isAvailable: !item.isAvailable }),
       });
+      if (!res.ok) throw new Error();
+      toast(item.isAvailable ? `"${item.name}" hidden (e.g. sold out).` : `"${item.name}" back on the menu.`, "success");
       fetchItems();
     } catch { toast("Could not update availability.", "error"); }
   };
 
   const handleSetSpecial = async (item: DBMenuItem) => {
     try {
-      // Clear existing specials first, then set this one
-      await Promise.all(
-        items.filter((i) => i.isSpecial && i.id !== item.id).map((i) =>
-          fetch(`/api/menu/${i.id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ isSpecial: false, category: i.category === "SPECIAL" ? "MAIN" : i.category }),
-          })
-        )
-      );
-      await fetch(`/api/menu/${item.id}`, {
+      // A dish whose category IS "Today's Specials" has no regular section to fall back to,
+      // so taking it off specials hides it; turning it back on re-shows it.
+      const specialsOnly = item.category === "SPECIAL";
+      const on = !(item.isSpecial || (specialsOnly && item.isAvailable));
+      const res = await authFetch(`/api/admin/menu/${item.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ isSpecial: true, category: "SPECIAL" }),
+        body: JSON.stringify(specialsOnly ? { isSpecial: on, isAvailable: on } : { isSpecial: on }),
       });
-      toast(`"${item.name}" is now Today's Special.`, "success");
+      if (!res.ok) throw new Error();
+      toast(
+        on ? `"${item.name}" added to Today's Specials.`
+           : specialsOnly
+             ? `"${item.name}" hidden. To keep it on the menu as a regular dish, edit it and change its category.`
+             : `"${item.name}" moved back to ${DB_CATEGORY_LABELS[item.category]}.`,
+        on ? "success" : "info",
+      );
       fetchItems();
     } catch { toast("Could not set special.", "error"); }
   };
@@ -186,17 +189,18 @@ export default function MenuAdmin() {
     if (!confirm("Delete this menu item? This cannot be undone.")) return;
     setDeletingId(id);
     try {
-      const res = await fetch(`/api/menu/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error();
-      toast("Item deleted.", "success");
+      const res  = await authFetch(`/api/admin/menu/${id}`, { method: "DELETE" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast(data.archived ? data.message : "Item deleted.", data.archived ? "info" : "success");
       fetchItems();
-    } catch { toast("Could not delete item.", "error"); }
+    } catch (e) { toast((e as Error).message || "Could not delete item.", "error"); }
     finally  { setDeletingId(null); }
   };
 
   // Filter + search
   const displayed = items.filter((i) => {
-    const matchCat    = filter === "ALL" || i.category === filter;
+    const matchCat    = filter === "ALL" || i.category === filter || (filter === "SPECIAL" && i.isSpecial);
     const matchSearch = !search || i.name.toLowerCase().includes(search.toLowerCase());
     return matchCat && matchSearch;
   });
@@ -204,7 +208,7 @@ export default function MenuAdmin() {
   // Group by category
   const grouped = (["SPECIAL","STARTER","MAIN","SIDE","RICE","BREAD"] as Category[]).reduce<Record<string, DBMenuItem[]>>(
     (acc, cat) => {
-      const list = displayed.filter((i) => i.category === cat);
+      const list = displayed.filter((i) => (cat === "SPECIAL" ? i.isSpecial || i.category === "SPECIAL" : i.category === cat && !i.isSpecial));
       if (list.length) acc[cat] = list;
       return acc;
     }, {}
@@ -214,7 +218,7 @@ export default function MenuAdmin() {
     total:     items.length,
     available: items.filter((i) => i.isAvailable).length,
     hidden:    items.filter((i) => !i.isAvailable).length,
-    specials:  items.filter((i) => i.isSpecial).length,
+    specials:  items.filter((i) => i.isAvailable && (i.isSpecial || i.category === "SPECIAL")).length,
   };
 
   return (
@@ -222,7 +226,7 @@ export default function MenuAdmin() {
       <div className="mb-6">
         <h1 className="font-display text-3xl text-charcoal-900">Menu Management</h1>
         <p className="text-gray-500 text-sm font-body mt-1">
-          Add, edit and hide dishes. Set Today&apos;s Special. Upload images to S3.
+          Add, edit and hide dishes (e.g. when sold out), set Today&apos;s Specials and upload photos. Changes go live on the website straight away.
         </p>
       </div>
 
@@ -306,6 +310,10 @@ export default function MenuAdmin() {
               {[
                 { key: "isSpecial",   label: "Today's Special", icon: <Sparkles size={14} />, colour: "border-gold text-amber-700 bg-saffron-50" },
                 { key: "isAvailable", label: "Available",       icon: <Eye size={14} />,       colour: "border-green-400 text-green-700 bg-green-50" },
+                { key: "isVegetarian",label: "Vegetarian",      icon: <Leaf size={14} />,      colour: "border-green-400 text-green-700 bg-green-50" },
+                { key: "isVegan",     label: "Vegan",           icon: <Leaf size={14} />,      colour: "border-green-600 text-green-800 bg-green-50" },
+                { key: "isSpicy",     label: "Spicy",           icon: <Flame size={14} />,     colour: "border-spice-400 text-spice-600 bg-spice-50" },
+                { key: "chefPick",    label: "Chef's pick",     icon: <Star size={14} />,      colour: "border-gold text-amber-700 bg-saffron-50" },
               ].map((flag) => (
                 <button key={flag.key} type="button"
                   onClick={() => sf(flag.key as keyof FormState, !form[flag.key as keyof FormState] as never)}
@@ -448,12 +456,11 @@ export default function MenuAdmin() {
 
                     {/* Actions */}
                     <div className="flex items-center gap-1 shrink-0">
-                      {!item.isSpecial && (
-                        <button onClick={() => handleSetSpecial(item)} title="Set as Today's Special"
-                          className="p-2 text-gray-300 hover:text-gold transition-colors border border-transparent hover:border-gold/30">
-                          <Sparkles size={14} />
-                        </button>
-                      )}
+                      <button onClick={() => handleSetSpecial(item)}
+                        title={(item.isSpecial || (item.category === "SPECIAL" && item.isAvailable)) ? "Remove from Today's Specials" : "Add to Today's Specials"}
+                        className={`p-2 transition-colors border border-transparent hover:border-gold/30 ${(item.isSpecial || (item.category === "SPECIAL" && item.isAvailable)) ? "text-gold" : "text-gray-300 hover:text-gold"}`}>
+                        <Sparkles size={14} />
+                      </button>
                       <button onClick={() => handleToggleAvailable(item)} title={item.isAvailable ? "Hide from menu" : "Show on menu"}
                         className="p-2 text-gray-300 hover:text-blue-500 transition-colors border border-transparent hover:border-blue-200">
                         {item.isAvailable ? <Eye size={14} /> : <EyeOff size={14} />}

@@ -4,6 +4,7 @@ import { PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js"
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { useToast } from "@/components/ui/Toast";
+import { authFetch } from "@/lib/api-client";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
 import { formatPrice } from "@/lib/utils";
@@ -68,19 +69,9 @@ export default function CheckoutForm({ clientSecret, orderId, onBack, onSuccess 
           body: JSON.stringify({ name, email, phone }),
         });
 
-        // Mark personalised discount code as redeemed
-        if (discountCode && user) {
-          await fetch("/api/offers/redeem", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ userId: user.userId, code: discountCode }),
-          }).catch(() => {}); // non-blocking
-        }
-
-        // Trigger personalisation engine to assign any newly unlocked offers
-        if (user) {
-          fetch(`/api/offers/user?userId=${user.userId}`).catch(() => {});
-        }
+        // Discount redemption is recorded server-side when the payment is verified.
+        // Refresh personalised offers so any newly unlocked ones are assigned.
+        if (user) authFetch("/api/offers/user").catch(() => {});
 
         onSuccess(orderId);
       }

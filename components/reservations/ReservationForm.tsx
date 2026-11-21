@@ -75,6 +75,7 @@ export default function ReservationForm() {
       const res = await fetch(`/api/reservations/availability?date=${date}`);
       const data = await res.json();
       setSlots(data.slots ?? []);
+      if (data.closed && data.reason) toast(data.reason, "info");
     } catch {
       toast("Could not load available times. Please try again.", "error");
       setSlots([]);

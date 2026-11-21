@@ -8,12 +8,14 @@ import {
 import Button from "@/components/ui/Button";
 import { useToast } from "@/components/ui/Toast";
 import { formatPrice } from "@/lib/utils";
+import { authFetch } from "@/lib/api-client";
 
-interface OrderItem { menuItemId: string; quantity: number; price: number; }
+interface OrderItem { menuItemId: string; name: string; quantity: number; price: number; }
 interface Order {
   id: string; type: "DELIVERY" | "TAKEAWAY";
   status: "PENDING"|"CONFIRMED"|"PREPARING"|"READY"|"DELIVERED"|"CANCELLED";
-  total: number; guestEmail: string | null; address: string | null;
+  total: number; subtotal: number; deliveryFee: number; discount: number; discountCode: string | null;
+  guestEmail: string | null; customerName: string | null; customerPhone: string | null; address: string | null;
   items: OrderItem[]; createdAt: string;
 }
 
@@ -45,8 +47,9 @@ export default function OrdersAdmin() {
       const params = new URLSearchParams();
       if (filterStatus) params.set("status", filterStatus);
       if (filterType)   params.set("type", filterType);
-      const res = await fetch(`/api/orders?${params}`);
+      const res = await authFetch(`/api/admin/orders?${params}`);
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
       setOrders(data.orders ?? []);
     } catch {
       toast("Failed to load orders.", "error");
@@ -57,19 +60,25 @@ export default function OrdersAdmin() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  const updateStatus = async (id: string, status: string) => {
+  // Live board: refresh every 30 seconds while the tab is open
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === "visible") fetchOrders(); }, 30000);
+    return () => clearInterval(t);
+  }, [fetchOrders]);
+
+  const updateStatus = async (id: string, status: string, refund = false) => {
     setUpdatingId(id);
     try {
-      const res = await fetch(`/api/orders/${id}`, {
+      const res = await authFetch(`/api/admin/orders/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
+        body: JSON.stringify({ status, refund }),
       });
-      if (!res.ok) throw new Error();
-      toast(`Order marked ${status.toLowerCase()}.`, "success");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast(data.refunded ? "Order cancelled and refunded." : `Order marked ${status.toLowerCase()}.`, "success");
       fetchOrders();
-    } catch {
-      toast("Could not update order.", "error");
+    } catch (e) {
+      toast((e as Error).message || "Could not update order.", "error");
     } finally {
       setUpdatingId(null);
     }
@@ -77,7 +86,18 @@ export default function OrdersAdmin() {
 
   // Stats
   const activeOrders   = orders.filter((o) => !["DELIVERED","CANCELLED"].includes(o.status));
-  const totalRevenue   = orders.filter((o) => o.status !== "CANCELLED").reduce((s,o) => s + o.total, 0);
+  const totalRevenue   = orders.filter((o) => o.status !== "CANCELLED" && o.status !== "PENDING").reduce((s,o) => s + o.total, 0);
+
+  const cancelOrder = (o: Order) => {
+    const paid = o.status !== "PENDING";
+    if (paid) {
+      if (!confirm(`Cancel order #${o.id.slice(-6).toUpperCase()} and refund ${formatPrice(o.total)} to the customer's card?`)) return;
+      updateStatus(o.id, "CANCELLED", true);
+    } else {
+      if (!confirm("Cancel this unpaid order?")) return;
+      updateStatus(o.id, "CANCELLED");
+    }
+  };
   const deliveryCount  = orders.filter((o) => o.type === "DELIVERY" && o.status !== "CANCELLED").length;
 
   return (
@@ -88,7 +108,7 @@ export default function OrdersAdmin() {
           { label: "Active Orders",  value: activeOrders.length,          colour: "border-spice-500" },
           { label: "Total Orders",   value: orders.length,                colour: "border-charcoal-700" },
           { label: "Delivery",       value: deliveryCount,                colour: "border-blue-400" },
-          { label: "Revenue (today)",value: formatPrice(totalRevenue),     colour: "border-gold" },
+          { label: "Revenue (listed)",value: formatPrice(totalRevenue),     colour: "border-gold" },
         ].map((s) => (
           <div key={s.label} className={`bg-white border-l-4 ${s.colour} border border-gray-100 p-4`}>
             <p className="font-display text-2xl text-charcoal-900">{s.value}</p>
@@ -154,22 +174,28 @@ export default function OrdersAdmin() {
                   <p className="font-display text-lg text-charcoal-900">#{order.id.slice(-6).toUpperCase()}</p>
                   <p className="text-xs text-gray-400 font-body flex items-center gap-1 justify-center sm:justify-start">
                     <Clock size={10} />
-                    {format(new Date(order.createdAt), "HH:mm")}
+                    {format(new Date(order.createdAt), "d MMM HH:mm")}
                   </p>
                 </div>
 
                 {/* Middle: items + customer */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-xs text-gray-500 font-body mb-1">{order.guestEmail ?? "Guest"}</p>
+                  <p className="text-sm text-charcoal-800 font-body font-medium">{order.customerName ?? "Guest"}</p>
+                  <p className="text-xs text-gray-500 font-body mb-1">
+                    {[order.guestEmail, order.customerPhone].filter(Boolean).join(" · ") || "No contact details"}
+                  </p>
                   <div className="flex flex-wrap gap-x-3 gap-y-0.5">
                     {order.items.map((item, i) => (
                       <span key={i} className="text-xs font-body text-charcoal-700">
-                        {item.menuItemId} × {item.quantity}
+                        {item.name || item.menuItemId} × {item.quantity}
                       </span>
                     ))}
                   </div>
+                  {order.discountCode && (
+                    <p className="text-xs text-green-700 font-body mt-1">Code {order.discountCode} · −{formatPrice(order.discount)}</p>
+                  )}
                   {order.address && (
-                    <p className="text-xs text-gray-400 font-body mt-1 truncate">{order.address}</p>
+                    <p className="text-xs text-gray-600 font-body mt-1">{order.address}</p>
                   )}
                 </div>
 
@@ -191,7 +217,7 @@ export default function OrdersAdmin() {
                     )}
                     {order.status !== "CANCELLED" && order.status !== "DELIVERED" && (
                       <button
-                        onClick={() => updateStatus(order.id, "CANCELLED")}
+                        onClick={() => cancelOrder(order)}
                         disabled={updatingId === order.id}
                         className="text-xs text-red-500 hover:text-red-700 font-body hover:underline disabled:opacity-50"
                       >

@@ -1,25 +1,15 @@
-// Prisma client — runtime-only singleton.
-// Run `npx prisma generate` after cloning before starting the server.
+// Prisma client singleton (survives Next.js hot reloads in dev).
+// Run `npx prisma generate` after cloning / after schema changes.
+import { PrismaClient } from "@prisma/client";
 
-/* eslint-disable */
-declare global {
-  var _prisma: any | undefined;
-}
+const globalForPrisma = globalThis as unknown as { _prisma?: PrismaClient };
 
-function getPrismaClient(): any {
-  if (global._prisma) return global._prisma;
-  const { PrismaClient } = require("@prisma/client");
-  global._prisma = new PrismaClient({
+const prisma =
+  globalForPrisma._prisma ??
+  new PrismaClient({
     log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   });
-  return global._prisma;
-}
 
-const prisma = new Proxy({} as any, {
-  get(_target: any, prop: string) {
-    return getPrismaClient()[prop];
-  },
-});
+if (process.env.NODE_ENV !== "production") globalForPrisma._prisma = prisma;
 
 export default prisma;
-/* eslint-enable */

@@ -1,16 +1,13 @@
+import "server-only";
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-const BUCKET = process.env.S3_BUCKET_NAME ?? "jk-curryhouse-menu-images";
-const REGION = process.env.AWS_REGION     ?? "eu-west-2";
+import { awsClientConfig, awsRegion } from "@/lib/aws";
 
-const s3 = new S3Client({
-  region: REGION,
-  credentials: {
-    accessKeyId:     process.env.AWS_ACCESS_KEY_ID     ?? "",
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? "",
-  },
-});
+const BUCKET = process.env.S3_BUCKET_NAME ?? "jk-curryhouse-menu-images";
+const REGION = awsRegion();
+
+const s3 = new S3Client(awsClientConfig());
 
 /** Generate a pre-signed upload URL valid for 5 minutes */
 export async function getUploadUrl(key: string, contentType: string): Promise<string> {
@@ -18,7 +15,7 @@ export async function getUploadUrl(key: string, contentType: string): Promise<st
     Bucket:      BUCKET,
     Key:         key,
     ContentType: contentType,
-    ACL:         "public-read",
+    // No ACL: new S3 buckets have ACLs disabled; public read comes from the bucket policy.
   });
   return getSignedUrl(s3, cmd, { expiresIn: 300 });
 }

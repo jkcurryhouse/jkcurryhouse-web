@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  JK Curryhouse - PostgreSQL database on Amazon RDS (ap-southeast-2, Sydney).
+  Publicly reachable over TLS because AWS Amplify Hosting's server runtime cannot join a private VPC.
+  Access is protected by a strong password, forced SSL and an optional source-IP allow-list.
+
+Parameters:
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the database (the account's default VPC is fine).
+  DBName:
+    Type: String
+    Default: jkcurryhouse
+    AllowedPattern: "[a-z][a-z0-9_]{2,62}"
+  MasterUsername:
+    Type: String
+    Default: jkadmin
+    AllowedPattern: "[a-z][a-z0-9_]{2,15}"
+  MasterPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 20
+    MaxLength: 64
+    AllowedPattern: "[A-Za-z0-9]+"
+    ConstraintDescription: 20-64 letters and numbers only (keeps the connection URL simple to encode).
+  AllowedCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: >
+      Who may open a connection to port 5432. Amplify Hosting uses changing AWS IPs, so 0.0.0.0/0 is
+      usually required; the password + TLS are the protection. Narrow this if you host elsewhere.
+  InstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    AllowedValues: [db.t4g.micro, db.t4g.small, db.t4g.medium]
+  AllocatedStorage:
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 200
+  BackupRetentionDays:
+    Type: Number
+    Default: 1
+    MinValue: 1
+    MaxValue: 35
+    Description: >
+      Days of automatic backups. AWS Free plan accounts allow only 1.
+      After upgrading to a paid plan, update the stack and set this to 7.
+
+Resources:
+  DBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: JK Curryhouse PostgreSQL access
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref AllowedCidr
+          Description: PostgreSQL from the website runtime
+      Tags:
+        - { Key: Project, Value: jk-curryhouse }
+
+  DBParameterGroup:
+    Type: AWS::RDS::DBParameterGroup
+    Properties:
+      Family: postgres17
+      Description: JK Curryhouse - force TLS, log slow queries
+      Parameters:
+        rds.force_ssl: "1"
+        log_min_duration_statement: "1000"
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: jk-curryhouse-db
+      Engine: postgres
+      EngineVersion: "17.6"
+      DBInstanceClass: !Ref InstanceClass
+      AllocatedStorage: !Ref AllocatedStorage
+      StorageType: gp3
+      StorageEncrypted: true
+      DBName: !Ref DBName
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterPassword
+      PubliclyAccessible: true
+      VPCSecurityGroups: [!GetAtt DBSecurityGroup.GroupId]
+      DBParameterGroupName: !Ref DBParameterGroup
+      BackupRetentionPeriod: !Ref BackupRetentionDays
+      PreferredBackupWindow: "03:00-04:00"
+      PreferredMaintenanceWindow: "mon:04:30-mon:05:30"
+      AutoMinorVersionUpgrade: true
+      DeletionProtection: true
+      CopyTagsToSnapshot: true
+      EnablePerformanceInsights: false
+      Tags:
+        - { Key: Project, Value: jk-curryhouse }
+
+Outputs:
+  Endpoint:
+    Description: Database host name
+    Value: !GetAtt Database.Endpoint.Address
+  Port:
+    Value: !GetAtt Database.Endpoint.Port
+  DatabaseUrlTemplate:
+    Description: Put this in DATABASE_URL, replacing PASSWORD with the MasterPassword you chose.
+    Value: !Sub "postgresql://${MasterUsername}:PASSWORD@${Database.Endpoint.Address}:${Database.Endpoint.Port}/${DBName}?sslmode=require&connection_limit=5"

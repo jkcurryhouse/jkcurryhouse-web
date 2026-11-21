@@ -1,120 +1,92 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 import prisma from "@/lib/prisma";
-import Stripe from "stripe";
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY ?? "sk_test_placeholder", {
-  apiVersion: "2026-06-24.dahlia",
-});
-
-const itemSchema = z.object({
-  menuItemId: z.string(),
-  name: z.string(),
-  price: z.number().positive(),
-  quantity: z.number().int().positive(),
-});
+import { getIdentity } from "@/lib/server-auth";
+import { quoteOrder, stripe } from "@/lib/orders";
 
 const schema = z.object({
   mode:            z.enum(["delivery", "takeaway"]),
-  items:           z.array(itemSchema).min(1),
-  subtotal:        z.number().nonnegative(),
-  deliveryFee:     z.number().nonnegative(),
-  discount:        z.number().nonnegative().default(0),
-  discountCode:    z.string().optional(),
-  total:           z.number().positive(),
-  deliveryAddress: z.string().optional(),
+  items:           z.array(z.object({
+    menuItemId: z.string().min(1),
+    quantity:   z.number().int().min(1).max(50),
+  })).min(1).max(60),
+  discountCode:    z.string().max(40).optional(),
+  deliveryAddress: z.string().max(300).optional(),
   guestEmail:      z.string().email().optional(),
-  userId:          z.string().optional(),
-});
+  expectedTotal:   z.number().nonnegative().optional(),
+}).passthrough();
 
+// POST /api/orders — price the basket on the server, create the order + Stripe PaymentIntent
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const parsed = schema.safeParse(body);
+    const parsed = schema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
-      return NextResponse.json(
-        { error: "Invalid request", details: parsed.error.flatten() },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "Invalid request", details: parsed.error.flatten() }, { status: 400 });
     }
+    const d  = parsed.data;
+    const me = await getIdentity(req);
 
-    const { mode, items, total, deliveryAddress, guestEmail, userId } = parsed.data;
-
-    // Delivery radius check — SN15 postcodes only
-    if (mode === "delivery" && deliveryAddress) {
-      const postcode = deliveryAddress.toUpperCase().replace(/\s+/g, "");
-      if (!postcode.startsWith("SN15") && !postcode.startsWith("SN14")) {
-        return NextResponse.json(
-          { error: "Sorry, we only deliver within the SN15 postcode area." },
-          { status: 422 }
-        );
-      }
-    }
-
-    // Create Stripe PaymentIntent
-    const amountPence = Math.round(total * 100);
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: amountPence,
-      currency: "gbp",
-      automatic_payment_methods: { enabled: true },
-      metadata: {
-        restaurant: "jk-curryhouse-chippenham",
-        mode,
-        itemCount: String(items.length),
-      },
+    const q = await quoteOrder({
+      mode: d.mode, items: d.items, discountCode: d.discountCode,
+      deliveryAddress: d.deliveryAddress, userId: me?.sub ?? null,
     });
+    if (!q.ok) return NextResponse.json({ error: q.error }, { status: q.status });
 
-    // Create order in DB (status PENDING until payment confirms)
+    // Basket shown to the customer must match what they'll be charged
+    if (d.expectedTotal != null && Math.abs(d.expectedTotal - q.total) > 0.009) {
+      return NextResponse.json({
+        error: `Prices have changed since you opened the menu — your total is now £${q.total.toFixed(2)}. Please review your basket.`,
+        quote: { subtotal: q.subtotal, deliveryFee: q.deliveryFee, discount: q.discount, total: q.total },
+      }, { status: 409 });
+    }
+
     const order = await prisma.order.create({
       data: {
-        type:    mode === "delivery" ? "DELIVERY" : "TAKEAWAY",
-        status:  "PENDING",
-        total,
-        userId:  userId ?? null,
-        guestEmail: guestEmail ?? null,
-        address: deliveryAddress ?? null,
-        items: {
-          create: items.map((item) => ({
-            menuItemId: item.menuItemId,
-            quantity:   item.quantity,
-            price:      item.price,
-          })),
-        },
+        type:         d.mode === "delivery" ? "DELIVERY" : "TAKEAWAY",
+        status:       "PENDING",
+        subtotal:     q.subtotal,
+        deliveryFee:  q.deliveryFee,
+        discount:     q.discount,
+        discountCode: q.discountCode,
+        total:        q.total,
+        userId:       me?.sub ?? null,
+        guestEmail:   d.guestEmail ?? me?.email ?? null,
+        address:      d.mode === "delivery" ? d.deliveryAddress ?? null : null,
+        items: { create: q.lines.map((l) => ({
+          menuItemId: l.menuItemId, name: l.name, quantity: l.quantity, price: l.price,
+        })) },
       },
     });
 
+    const pi = await stripe.paymentIntents.create({
+      amount:   Math.round(q.total * 100),
+      currency: "gbp",
+      automatic_payment_methods: { enabled: true },
+      metadata: { restaurant: "jk-curryhouse-chippenham", orderId: order.id, mode: d.mode },
+    });
+    await prisma.order.update({ where: { id: order.id }, data: { stripePaymentIntentId: pi.id } });
+
     return NextResponse.json({
-      orderId:      order.id,
-      clientSecret: paymentIntent.client_secret,
+      orderId: order.id, clientSecret: pi.client_secret,
+      subtotal: q.subtotal, deliveryFee: q.deliveryFee, discount: q.discount, total: q.total,
     });
   } catch (err) {
     console.error("[POST /api/orders]", err);
-    return NextResponse.json(
-      { error: "Could not create order. Please try again." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Could not create order. Please try again." }, { status: 500 });
   }
 }
 
+// GET /api/orders — the signed-in customer's own order history
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const status  = searchParams.get("status");
-  const userId  = searchParams.get("userId");
-  const type    = searchParams.get("type");
-
+  const me = await getIdentity(req);
+  if (!me) return NextResponse.json({ error: "Sign in required." }, { status: 401 });
   try {
-    const where: Record<string, unknown> = {};
-    if (status) where.status = status;
-    if (userId) where.userId = userId;
-    if (type)   where.type   = type;
-
     const orders = await prisma.order.findMany({
-      where,
+      where:   { userId: me.sub, status: { not: "PENDING" } },
       include: { items: true },
       orderBy: { createdAt: "desc" },
-      take: 100,
+      take:    50,
     });
-
     return NextResponse.json({ orders });
   } catch (err) {
     console.error("[GET /api/orders]", err);

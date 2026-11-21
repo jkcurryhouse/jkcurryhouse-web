@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { menuItems } from "@/lib/menu-data";
+import { getPublicMenu } from "@/lib/menu-repo";
 import { formatPrice } from "@/lib/utils";
 import { Flame, Star } from "lucide-react";
 
-export default function FeaturedDishes() {
-  const featured = menuItems.filter((i) => i.chefPick).slice(0, 4);
+export default async function FeaturedDishes() {
+  const { items } = await getPublicMenu();
+  const featured = [...items.filter((i) => i.category === "special"), ...items.filter((i) => i.chefPick && i.category !== "special")].slice(0, 4);
 
   return (
     <section className="section-pad bg-cream">

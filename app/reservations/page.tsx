@@ -1,5 +1,8 @@
 import type { Metadata } from "next";
 import ReservationForm from "@/components/reservations/ReservationForm";
+import NoticeBanner from "@/components/layout/NoticeBanner";
+
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Book a Table — JK Curryhouse Chippenham",
@@ -10,7 +13,9 @@ export const metadata: Metadata = {
 
 export default function ReservationsPage() {
   return (
-    <div className="bg-gray-50 py-12 md:py-16">
+    <div className="bg-gray-50 pt-16 pb-12 md:pb-16">
+      <NoticeBanner />
+      <div className="pt-12 md:pt-16" />
       <div className="container-pad max-w-3xl mx-auto">
         <div className="text-center mb-10">
           <p className="font-accent text-gold text-sm tracking-[0.2em] uppercase mb-2">

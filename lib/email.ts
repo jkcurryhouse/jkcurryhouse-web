@@ -1,19 +1,16 @@
+import "server-only";
 import { SESClient, SendEmailCommand } from "@aws-sdk/client-ses";
 
-const ses = new SESClient({
-  region: process.env.AWS_REGION ?? "eu-west-2",
-  credentials: {
-    accessKeyId:     process.env.AWS_ACCESS_KEY_ID!,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
-  },
-});
+import { awsClientConfig } from "@/lib/aws";
+
+const ses = new SESClient(awsClientConfig());
 
 const FROM = process.env.SES_FROM_EMAIL ?? "hello@jkcurryhouse.co.uk";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.jkcurryhouse.co.uk";
 const RESTAURANT_NAME = "JK Curryhouse";
 
 // ── Shared email wrapper ────────────────────────────────────────────────────
-async function sendEmail(to: string, subject: string, html: string, text: string) {
+export async function sendEmail(to: string, subject: string, html: string, text: string) {
   const cmd = new SendEmailCommand({
     Source: `${RESTAURANT_NAME} <${FROM}>`,
     Destination: { ToAddresses: [to] },
@@ -251,4 +248,64 @@ export async function sendOrderNotification({
   `;
   const text = `New order #${ref}: ${name}, £${total.toFixed(2)}, ${mode}. Phone: ${phone}`;
   return sendEmail(FROM, subject, emailShell(body), text);
+}
+
+// ── Helpers for admin-triggered emails ──────────────────────────────────────
+export function escapeHtml(s: string) {
+  return s.replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c] as string));
+}
+
+// ── Offer rollout (to customer) ─────────────────────────────────────────────
+export async function sendOfferEmail({
+  to, name, title, description, code, discountLabel, expires, unsubscribeUrl,
+}: {
+  to: string; name: string; title: string; description: string; code: string;
+  discountLabel: string; expires: string; unsubscribeUrl: string;
+}) {
+  const subject = `${title} — ${discountLabel} at JK Curryhouse`;
+  const n = escapeHtml(name || "there");
+  const body = `
+    <h2 style="margin:0 0 8px;font-family:'Georgia',serif;font-size:24px;color:#0b0b0b;">${escapeHtml(title)}</h2>
+    <p style="margin:0 0 24px;font-size:15px;color:#5c4033;font-family:Arial,sans-serif;">
+      Hi ${n}, thank you for being a JK Curryhouse regular. ${escapeHtml(description)}
+    </p>
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#faf6f0;border:1px dashed #d4a437;margin-bottom:24px;">
+      <tr><td style="padding:24px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#9b8679;font-family:Arial,sans-serif;">Your code</p>
+        <p style="margin:0;font-family:'Courier New',monospace;font-size:28px;font-weight:bold;color:#0b0b0b;letter-spacing:3px;">${escapeHtml(code)}</p>
+        <p style="margin:8px 0 0;font-size:14px;color:#8a6416;font-family:Arial,sans-serif;">${escapeHtml(discountLabel)} · valid until ${escapeHtml(expires)}</p>
+      </td></tr>
+    </table>
+    <p style="text-align:center;margin:0 0 24px;">
+      <a href="${SITE_URL}/order" style="display:inline-block;background:#8a6416;color:#fff;text-decoration:none;padding:12px 28px;font-family:Arial,sans-serif;font-size:14px;">Order now</a>
+    </p>
+    <p style="margin:24px 0 0;font-size:11px;color:#9b8679;font-family:Arial,sans-serif;">
+      You're receiving this because you have a JK Curryhouse account.
+      <a href="${unsubscribeUrl}" style="color:#9b8679;">Unsubscribe from offer emails</a>.
+    </p>
+  `;
+  const text = `${title}\n\nHi ${name || "there"}, ${description}\n\nCode: ${code} (${discountLabel}, valid until ${expires})\nOrder: ${SITE_URL}/order\n\nUnsubscribe: ${unsubscribeUrl}`;
+  return sendEmail(to, subject, emailShell(body), text);
+}
+
+// ── Reservation cancelled by the restaurant (to guest) ──────────────────────
+export async function sendReservationCancelled({
+  to, name, date, time, reservationId,
+}: { to: string; name: string; date: string; time: string; reservationId: string }) {
+  const subject = `Your booking on ${date} has been cancelled | JK Curryhouse`;
+  const body = `
+    <h2 style="margin:0 0 8px;font-family:'Georgia',serif;font-size:24px;color:#0b0b0b;">Booking cancelled</h2>
+    <p style="margin:0 0 16px;font-size:15px;color:#5c4033;font-family:Arial,sans-serif;">
+      Hi ${escapeHtml(name)}, your table for ${escapeHtml(date)} at ${escapeHtml(time)}
+      (ref #${reservationId.slice(-8).toUpperCase()}) has been cancelled.
+    </p>
+    <p style="font-size:14px;color:#5c4033;font-family:Arial,sans-serif;line-height:1.6;">
+      If this is unexpected, please call us on
+      <a href="tel:01249123456" style="color:#8a6416;text-decoration:none;font-weight:bold;">01249 123456</a>.
+      You can <a href="${SITE_URL}/reservations" style="color:#8a6416;">book another time online</a>.
+    </p>
+  `;
+  const text = `Hi ${name}, your table for ${date} at ${time} (ref ${reservationId.slice(-8).toUpperCase()}) has been cancelled. Questions: 01249 123456`;
+  return sendEmail(to, subject, emailShell(body), text);
 }

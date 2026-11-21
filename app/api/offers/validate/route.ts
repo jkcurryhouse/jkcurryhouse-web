@@ -1,22 +1,30 @@
 import { NextResponse, type NextRequest } from "next/server";
-import prisma from "@/lib/prisma";
+import { getIdentity } from "@/lib/server-auth";
+import { checkOfferForOrder } from "@/lib/offer-rules";
 
+export const dynamic = "force-dynamic";
+
+// GET /api/offers/validate?code=WELCOME10&subtotal=32.50
 export async function GET(req: NextRequest) {
-  const code = req.nextUrl.searchParams.get("code")?.trim().toUpperCase();
-  if (!code) return NextResponse.json({ error: "No code provided." }, { status: 400 });
+  const code     = req.nextUrl.searchParams.get("code")?.trim();
+  const subtotal = Number(req.nextUrl.searchParams.get("subtotal") ?? 0) || 0;
+  if (!code) return NextResponse.json({ valid: false, error: "No code provided." }, { status: 400 });
 
   try {
-    const offer = await prisma.offer.findUnique({ where: { code } });
-    if (!offer) return NextResponse.json({ valid: false, error: "Code not found." }, { status: 404 });
-    if (new Date() > offer.expiresAt) return NextResponse.json({ valid: false, error: "This code has expired." }, { status: 410 });
+    const me     = await getIdentity(req);
+    const result = await checkOfferForOrder(code, subtotal, me?.sub ?? null);
+    if (!result.ok) return NextResponse.json({ valid: false, error: result.error }, { status: result.status });
 
-    const percent = offer.isPercent ? offer.discount : 0;
-    const amount  = offer.isPercent ? 0 : offer.discount;
-    const label   = offer.isPercent ? `${offer.discount}% off` : `${offer.discount.toFixed(2)} off`;
-
-    return NextResponse.json({ valid: true, code, percent, amount, label });
+    const o = result.offer;
+    return NextResponse.json({
+      valid:   true,
+      code:    o.code,
+      percent: o.isPercent ? o.discount : 0,
+      amount:  o.isPercent ? 0 : o.discount,
+      label:   o.isPercent ? `${o.discount}% off` : `£${o.discount.toFixed(2)} off`,
+    });
   } catch (err) {
     console.error("[GET /api/offers/validate]", err);
-    return NextResponse.json({ error: "Failed to validate code." }, { status: 500 });
+    return NextResponse.json({ valid: false, error: "Failed to validate code." }, { status: 500 });
   }
 }

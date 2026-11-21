@@ -7,6 +7,7 @@ import { format } from "date-fns";
 import { Tag, Clock, CheckCircle, Copy, ChevronRight, Gift } from "lucide-react";
 import Link from "next/link";
 import Button from "@/components/ui/Button";
+import { authFetch } from "@/lib/api-client";
 
 export default function OffersTab({ userId }: { userId: string }) {
   const { setDiscount, discountCode } = useCart();
@@ -18,7 +19,7 @@ export default function OffersTab({ userId }: { userId: string }) {
   useEffect(() => {
     (async () => {
       try {
-        const res  = await fetch(`/api/offers/user?userId=${userId}`);
+        const res  = await authFetch("/api/offers/user");
         const data = await res.json();
         setOffers(data.offers ?? []);
       } catch {

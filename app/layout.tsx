@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
+import HideOnAdmin from "@/components/layout/HideOnAdmin";
 import Footer from "@/components/layout/Footer";
 import CookieBanner from "@/components/ui/CookieBanner";
 import { AuthProvider } from "@/context/AuthContext";
@@ -106,10 +107,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <AuthProvider>
           <CartProvider>
             <ToastProvider>
-              <Navbar />
+              <HideOnAdmin><Navbar /></HideOnAdmin>
               <main id="main-content">{children}</main>
-              <Footer />
-              <CookieBanner />
+              <HideOnAdmin><Footer /></HideOnAdmin>
+              <HideOnAdmin><CookieBanner /></HideOnAdmin>
             </ToastProvider>
           </CartProvider>
         </AuthProvider>

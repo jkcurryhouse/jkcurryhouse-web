@@ -1,11 +1,11 @@
 "use client";
 import { useState } from "react";
 import { useCart } from "@/context/CartContext";
-import { menuItems, categoryOrder, categoryLabels, ALLERGEN_LABELS, type MenuItem, type AllergenKey } from "@/lib/menu-data";
+import { categoryOrder, categoryLabels, ALLERGEN_LABELS, type MenuItem, type AllergenKey } from "@/lib/menu-data";
 import { formatPrice } from "@/lib/utils";
 import { Plus, Minus, Flame, Leaf, Star } from "lucide-react";
 
-export default function MenuSection() {
+export default function MenuSection({ items: menuItems }: { items: MenuItem[] }) {
   const { items: cartItems, add, increment, decrement } = useCart();
   const [activeCategory, setActiveCategory] = useState<string>("all");
 

@@ -6,7 +6,14 @@ frontend:
         - npm ci
     build:
       commands:
+        # Amplify only exposes env vars at BUILD time. Copy the ones the server needs at RUNTIME
+        # into .env.production so API routes (admin panel, orders, bookings) can read them.
+        - >-
+          env | grep -E '^(DATABASE_URL|NEXT_PUBLIC_[A-Z_]+|APP_AWS_[A-Z_]+|S3_BUCKET_NAME|SES_FROM_EMAIL|STRIPE_SECRET_KEY|STRIPE_WEBHOOK_SECRET|UNSUBSCRIBE_SECRET)=' >> .env.production || true
         - npx prisma generate
+        # Apply schema changes to RDS on each deploy. `db push` refuses destructive changes
+        # (dropping columns/tables with data) unless --accept-data-loss is given, so it is safe here.
+        - npx prisma db push --skip-generate
         - npm run build
   artifacts:
     baseDirectory: .next
